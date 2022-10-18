@@ -1,0 +1,5 @@
+say:What is your name? ;
+ask:$name;
+say:Hello there ,;
+say:$name;
+exit;

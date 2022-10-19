@@ -19,7 +19,8 @@ enum Token {
     Whitespace
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
 
     let args = Args::from_cli_args();
 
@@ -197,6 +198,24 @@ fn main() {
                             _ => {
                                 panic!("Unexpected value after 'ask'");
                             },
+                        };
+                    },
+                    "http_get" => {
+                        // get from http and store in a variable
+                        match statement.get(1) {
+                            Some(Token::Literal(Type::String(value))) => {
+
+                                if let Ok(response) = reqwest::get(value).await.expect("http get failed").text().await {
+                                    match statement.get(2) {
+                                        Some(Token::Identifier(Type::String(value))) => {
+                                            variables.insert(String::from(value), Type::String(response));
+                                        },
+                                        _ => { panic!("No identifier in second arg for http-get"); },
+                                    };
+                                };
+
+                            },
+                            _ => { panic!("No URL in first arg for http_get"); },
                         };
                     },
                     "exit" => {

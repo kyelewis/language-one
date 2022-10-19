@@ -1,7 +1,9 @@
 say `What is your name? `;
 ask name;
-set age 35;
 say `Hello there `;
 say name;
 say `. `;
+http_get `https://api.ipify.org/` ip_address;
+say `Your IP is `;
+say ip_address;
 exit;

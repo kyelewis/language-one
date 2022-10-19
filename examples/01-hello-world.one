@@ -1,0 +1,7 @@
+say `What is your name? `;
+ask name;
+set age 35;
+say `Hello there `;
+say name;
+say `. `;
+exit;

@@ -1,5 +1,6 @@
 [package]
-name = "language-one"
+name = "onelang"
+description = "because everyone should have their own language"
 version = "0.1.0"
 edition = "2021"
 

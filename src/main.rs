@@ -1,8 +1,23 @@
 mod args;
-use args::{Args};
-use std::{io,fs};
+use args::Args;
+use std::{io,fs,process};
 use std::io::Write;
-use std::collections::{HashMap};
+use std::collections::HashMap;
+
+#[derive(Debug,Clone)]
+enum Type {
+    String(String),
+    Number(i32)
+}
+
+#[derive(Debug,Clone)]
+enum Token {
+    Identifier(Type),
+    Literal(Type),
+    EndOfStatement,
+    EndOfFile,
+    Whitespace
+}
 
 fn main() {
 
@@ -16,39 +31,192 @@ fn main() {
         _ => { panic!("Missing --file argument"); } 
     };
 
-    let code = match fs::read_to_string(path) {
+    let code_string = match fs::read_to_string(path) { 
         Ok(value) => value,
         Err(error) => { panic!("Could not read {}: {}", path, error); }
     };
 
-    let statements: Vec<&str> = code.split(";").map(|s| s.trim()).collect(); 
-    let mut variables: HashMap<&str, String> = HashMap::new();
+    let mut code_characters = code_string.chars().peekable();
 
-    for statement in statements {
-        let statement_items: Vec<&str> = statement.split(":").collect();
-        match statement_items[..] {
-            [a, b] if a.eq("say") => {
-                if b.chars().nth(0).unwrap() == '$' {
-                    match variables.get(b) {
-                        Some(value) => { print!("{}", value) },
-                        None => { panic!("Undefined variable {}", b); },
+    // tokenise
+    let mut tokens: Vec<Token> = Vec::new();
+
+    loop {
+        
+        let token = match code_characters.next() {
+            // 0-9, read until non-number character
+            Some(character) if character.is_ascii_digit() => {
+                let mut number = String::from(character);
+                loop {
+                    match code_characters.peek() {
+                        Some(c) if c.is_ascii_digit() => {
+                            let next_character = code_characters.next().unwrap();
+                            number.push(next_character);
+                        },
+                        _ => { break; }
                     };
-                } else {
-                    print!("{}", b);
                 };
-            },
-            [a, b] if a.eq("ask") => { 
-                let mut line = String::new();
-                let len = io::stdin().read_line(&mut line);
-                match len {
-                    Ok(_) => { variables.insert(b, line); },
-                    Err(error) => { panic!("Error reading line: {}", error); }
+                match number.parse() {
+                    Ok(number) => Some(Token::Literal(Type::Number(number))),
+                    Err(error) => panic!("Could not parse number: {}", error),
                 }
             },
-            [a] if a.eq("exit") => { break; }
-            _ => { println!("unknown statement"); }
+            // ` string literal, Read until next ` and store a StringLiteral
+            Some(character) if character.is_ascii_whitespace() => {
+                loop {
+                    match code_characters.peek() {
+                        Some(character) if character.is_ascii_whitespace() => { },
+                        _ => { break; }
+                    };
+                };
+                Some(Token::Whitespace)
+            },
+            // semicolon ends a statement
+            Some(character) if ';'.eq(&character) => Some(Token::EndOfStatement),
+            // ` is a string literal, read until the next ` 
+            Some(character) if '`'.eq(&character) => {
+                let mut string_literal = String::new();   // Don't use the `
+                loop {
+                    match code_characters.peek() {
+                        Some(c) if !('`'.eq(&c)) => {
+                            let next_character = code_characters.next().unwrap();
+                            string_literal.push(next_character);
+                        },
+                        _ => { 
+                            // Eat the last `
+                            let _ = code_characters.next();
+                            break;
+                        }
+                    };
+                };
+                Some(Token::Literal(Type::String(string_literal)))
+            },
+            // anything else is a valid identifier, read until space or semicolon
+            Some(character) => {
+                let mut identifier = String::from(character);
+                loop {
+                    match code_characters.peek() {
+                        Some(c) if !c.is_ascii_whitespace() && !';'.eq(&c) => {
+                            let next_character = code_characters.next().unwrap();
+                            identifier.push(next_character);
+                        },
+                        _ => { break; }
+                    };
+                };
+                Some(Token::Identifier(Type::String(identifier)))
+            },
+            None => Some(Token::EndOfFile), 
         };
+
+        if let Some(token) = token {
+          if let Token::EndOfFile = token {
+            tokens.push(token);
+              break;
+          } else {
+              tokens.push(token);
+          }
+        };
+
+    };
+
+//    println!("Tokens:\n{:#?}", tokens);
+
+    // parse - this could probably be done with fold if i were a better rust programmer
+    let mut statements: Vec<Vec<Token>> = Vec::new();
+
+    let mut tokens = tokens.iter();
+
+    let mut next_statement: Vec<Token> = Vec::new();
+    loop {
+        match tokens.next() {
+           Some(Token::EndOfStatement) => {
+               statements.push(next_statement);
+               next_statement = Vec::new();
+           },
+           None | Some(Token::EndOfFile) => {
+               break;
+           },
+           Some(Token::Whitespace) => {},
+           Some(token) => {
+               next_statement.push(token.clone());
+           },
+        };
+    };
+
+ //   println!("Statements:\n{:#?}", statements);
+
+    // Run
+   
+    let mut variables: HashMap<String, Type> = HashMap::new();
+
+    for statement in statements {
+
+        match statement.get(0) {
+            Some(Token::Identifier(Type::String(value))) => {
+                // Function call
+                
+                match value.as_str() {
+                    "say" => {
+                        // print to console
+                        match statement.get(1) {
+                            Some(Token::Literal(Type::String(value))) => {
+                                print!("{}", value);
+                            },
+                            Some(Token::Literal(Type::Number(value))) => {
+                                print!("{}", value);
+                            },
+                            Some(Token::Identifier(Type::String(value))) => {
+                                match variables.get(value) {
+                                    Some(Type::String(value)) => {
+                                        print!("{}", value);
+                                    },
+                                    Some(Type::Number(value)) => {
+                                        print!("{}", value);
+                                    },
+                                    _ => {
+                                        print!("(undefined)");
+                                    },
+                                };
+                            },
+                            _ => {
+                                panic!("Unexpected value after 'say'");
+                            },
+                        };
+                    },
+                    "ask" => {
+                        // ask for input 
+                        match statement.get(1) {
+                            Some(Token::Identifier(Type::String(value))) => {
+                                // Ask for input
+                                let mut line = String::new(); 
+                                let _ = io::stdin().read_line(&mut line);
+                                    
+                                // @todo could be a number?
+                                variables.insert(String::from(value), Type::String(String::from(line.trim_end())));
+                            },
+                            _ => {
+                                panic!("Unexpected value after 'ask'");
+                            },
+                        };
+                    },
+                    "exit" => {
+                        match statement.get(1) {
+                            Some(Token::Literal(Type::Number(value))) => {
+                                process::exit(*value);
+                            },
+                            _ => {
+                                process::exit(0);
+                            },
+                        };
+                    },
+                    _ => {},
+                };
+            },
+            _ => {},
+        }
+
         io::stdout().flush().unwrap();
     }
 
 }
+
